@@ -18,6 +18,11 @@ function fmtTime(iso: string): string {
   })
 }
 
+// Cancellable only while the appointment's end time is still in the future.
+function isUpcoming(endIso: string): boolean {
+  return new Date(endIso).getTime() > Date.now()
+}
+
 export default function AdminPage() {
   const [services, setServices] = useState<Service[]>([])
   const [stylists, setStylists] = useState<Stylist[]>([])
@@ -54,6 +59,13 @@ export default function AdminPage() {
 
   useEffect(() => {
     void loadAll()
+    // Periodically refresh so elapsed appointments get swept (server-side) to
+    // completed/no_show and the Cancel action disappears without a manual
+    // reload — consistent with the customer History page.
+    const timer = setInterval(() => {
+      void loadAll()
+    }, 60_000)
+    return () => clearInterval(timer)
   }, [])
 
   async function addService(e: FormEvent) {
@@ -113,6 +125,16 @@ export default function AdminPage() {
     setError(null)
     try {
       await api.undoCheckIn(id)
+      await loadAll()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function cancelAppt(id: number) {
+    setError(null)
+    try {
+      await api.cancel(id)
       await loadAll()
     } catch (e) {
       setError((e as Error).message)
@@ -251,6 +273,7 @@ export default function AdminPage() {
                 <th>Stylist</th>
                 <th>Status</th>
                 <th>Check-in</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -277,6 +300,15 @@ export default function AdminPage() {
                       </span>
                     ) : a.status === 'booked' ? (
                       <button onClick={() => checkIn(a.id)}>Check in</button>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
+                  </td>
+                  <td>
+                    {a.status === 'booked' && isUpcoming(a.end) ? (
+                      <button className="link-btn" onClick={() => cancelAppt(a.id)}>
+                        Cancel
+                      </button>
                     ) : (
                       <span className="muted">—</span>
                     )}

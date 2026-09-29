@@ -9,24 +9,36 @@ function fmt(iso: string): string {
   })
 }
 
+// An appointment is still cancellable only while its end time is in the future.
+function isUpcoming(endIso: string): boolean {
+  return new Date(endIso).getTime() > Date.now()
+}
+
 export default function HistoryPage() {
   const [appts, setAppts] = useState<Appointment[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  async function load() {
-    setLoading(true)
+  async function load({ silent = false }: { silent?: boolean } = {}) {
+    if (!silent) setLoading(true)
     try {
       setAppts(await api.myAppointments())
     } catch (e) {
       setError((e as Error).message)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
+    // Re-fetch periodically (silently) so that once a slot's time passes, the
+    // server sweep flips it to completed/no_show and the Cancel button
+    // disappears without a manual reload.
+    const timer = setInterval(() => {
+      void load({ silent: true })
+    }, 60_000)
+    return () => clearInterval(timer)
   }, [])
 
   async function cancel(id: number) {
@@ -56,7 +68,7 @@ export default function HistoryPage() {
           <div className="muted">
             {a.stylist?.name ?? `Stylist #${a.stylist_id}`} · {fmt(a.start)}
           </div>
-          {a.status === 'booked' && (
+          {a.status === 'booked' && isUpcoming(a.end) && (
             <div style={{ marginTop: '0.5rem' }}>
               <button onClick={() => cancel(a.id)}>Cancel</button>
             </div>

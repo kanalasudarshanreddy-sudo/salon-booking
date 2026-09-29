@@ -178,6 +178,15 @@ def cancel_appointment(
         raise HTTPException(status_code=403, detail="Not allowed to cancel this appointment")
     if appt.status == AppointmentStatus.cancelled:
         return appt
+    # Cannot cancel an appointment whose time has already passed — resolve its
+    # terminal status (completed/no_show) and reject the cancel.
+    if appt.end < _salon_now():
+        _sweep_elapsed(session)
+        session.refresh(appt)
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot cancel an appointment that has already passed",
+        )
     appt.status = AppointmentStatus.cancelled
     session.add(appt)
     session.commit()

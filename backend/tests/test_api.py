@@ -316,3 +316,25 @@ def test_sweep_future_stays_booked(client):
     appts = client.get("/appointments", headers=auth_header(admin)).json()
     row = next(a for a in appts if a["id"] == appt_id)
     assert row["status"] == "booked"
+
+
+def test_cannot_cancel_past_appointment(client):
+    admin = make_admin_token(client)
+    # Elapsed appointment, not checked in.
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-15, checked_in=False)
+    # Admin (allowed to cancel any) attempts to cancel a past appointment -> 400.
+    r = client.patch(f"/appointments/{appt_id}/cancel", headers=auth_header(admin))
+    assert r.status_code == 400
+
+    # It should not be cancelled; the sweep resolves it to no_show instead.
+    appts = client.get("/appointments", headers=auth_header(admin)).json()
+    row = next(a for a in appts if a["id"] == appt_id)
+    assert row["status"] == "no_show"
+
+
+def test_can_cancel_upcoming_appointment(client):
+    admin = make_admin_token(client)
+    appt_id = _seed_customer_and_appt(client, end_offset_min=120, checked_in=False)
+    r = client.patch(f"/appointments/{appt_id}/cancel", headers=auth_header(admin))
+    assert r.status_code == 200
+    assert r.json()["status"] == "cancelled"
