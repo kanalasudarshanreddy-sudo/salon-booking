@@ -23,6 +23,13 @@ function isUpcoming(endIso: string): boolean {
   return new Date(endIso).getTime() > Date.now()
 }
 
+// Check-in is allowed until 15 minutes after the appointment's end time, so a
+// front desk can still record a late arrival.
+const CHECK_IN_GRACE_MS = 15 * 60 * 1000
+function withinCheckInWindow(endIso: string): boolean {
+  return Date.now() <= new Date(endIso).getTime() + CHECK_IN_GRACE_MS
+}
+
 export default function AdminPage() {
   const [services, setServices] = useState<Service[]>([])
   const [stylists, setStylists] = useState<Stylist[]>([])
@@ -298,7 +305,7 @@ export default function AdminPage() {
                           undo
                         </button>
                       </span>
-                    ) : a.status === 'booked' ? (
+                    ) : a.status === 'booked' && withinCheckInWindow(a.end) ? (
                       <button onClick={() => checkIn(a.id)}>Check in</button>
                     ) : (
                       <span className="muted">—</span>

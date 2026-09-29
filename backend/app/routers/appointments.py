@@ -23,6 +23,11 @@ from app.schemas import AppointmentCreate, AppointmentDetailOut, AppointmentOut
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 settings = get_settings()
 
+# Grace period after an appointment's end during which a late arrival can still
+# be checked in. The no-show/completed sweep also waits for this window so a
+# background list fetch doesn't prematurely resolve an appointment mid-grace.
+CHECK_IN_GRACE = timedelta(minutes=15)
+
 
 def _salon_now() -> datetime:
     """Current wall-clock time in the salon's timezone, as naive datetime
@@ -37,18 +42,19 @@ def _salon_now() -> datetime:
 def _sweep_elapsed(session: Session) -> None:
     """Transition elapsed `booked` appointments to a terminal status.
 
-    A booking whose end time has passed is resolved based on check-in:
+    A booking is resolved once it is past its end time plus the check-in grace
+    period, based on check-in:
     - checked in  -> completed (the customer attended)
     - not checked in -> no_show
 
     Runs lazily on list reads (the app has no background scheduler). Persists
     the new status so admin views and reports reflect reality.
     """
-    now = _salon_now()
+    cutoff = _salon_now() - CHECK_IN_GRACE
     elapsed = session.exec(
         select(Appointment).where(
             Appointment.status == AppointmentStatus.booked,
-            Appointment.end < now,
+            Appointment.end < cutoff,
         )
     ).all()
     if not elapsed:
@@ -211,6 +217,11 @@ def check_in_appointment(
         raise HTTPException(
             status_code=400,
             detail="Only booked appointments can be checked in",
+        )
+    if _salon_now() > appt.end + CHECK_IN_GRACE:
+        raise HTTPException(
+            status_code=400,
+            detail="Check-in window has closed for this appointment",
         )
     if appt.checked_in_at is None:
         appt.checked_in_at = _salon_now()

@@ -296,7 +296,7 @@ def _seed_customer_and_appt(client, *, end_offset_min, checked_in):
 
 def test_sweep_elapsed_checked_in_becomes_completed(client):
     admin = make_admin_token(client)
-    appt_id = _seed_customer_and_appt(client, end_offset_min=-10, checked_in=True)
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-20, checked_in=True)
     appts = client.get("/appointments", headers=auth_header(admin)).json()
     row = next(a for a in appts if a["id"] == appt_id)
     assert row["status"] == "completed"
@@ -304,7 +304,7 @@ def test_sweep_elapsed_checked_in_becomes_completed(client):
 
 def test_sweep_elapsed_not_checked_in_becomes_no_show(client):
     admin = make_admin_token(client)
-    appt_id = _seed_customer_and_appt(client, end_offset_min=-10, checked_in=False)
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-20, checked_in=False)
     appts = client.get("/appointments", headers=auth_header(admin)).json()
     row = next(a for a in appts if a["id"] == appt_id)
     assert row["status"] == "no_show"
@@ -320,8 +320,8 @@ def test_sweep_future_stays_booked(client):
 
 def test_cannot_cancel_past_appointment(client):
     admin = make_admin_token(client)
-    # Elapsed appointment, not checked in.
-    appt_id = _seed_customer_and_appt(client, end_offset_min=-15, checked_in=False)
+    # Elapsed appointment (beyond check-in grace), not checked in.
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-20, checked_in=False)
     # Admin (allowed to cancel any) attempts to cancel a past appointment -> 400.
     r = client.patch(f"/appointments/{appt_id}/cancel", headers=auth_header(admin))
     assert r.status_code == 400
@@ -338,3 +338,23 @@ def test_can_cancel_upcoming_appointment(client):
     r = client.patch(f"/appointments/{appt_id}/cancel", headers=auth_header(admin))
     assert r.status_code == 200
     assert r.json()["status"] == "cancelled"
+
+
+def test_check_in_within_grace_period(client):
+    admin = make_admin_token(client)
+    # Ended 5 min ago -> within the 15-min grace, still checkable (late arrival).
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-5, checked_in=False)
+    r = client.patch(f"/appointments/{appt_id}/check-in", headers=auth_header(admin))
+    assert r.status_code == 200
+    assert r.json()["checked_in_at"] is not None
+
+
+def test_check_in_after_grace_period_blocked(client):
+    admin = make_admin_token(client)
+    # Ended 20 min ago -> past grace; the sweep resolves it to no_show and
+    # check-in is rejected (no longer booked).
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-20, checked_in=False)
+    # Trigger the sweep via a list read.
+    client.get("/appointments", headers=auth_header(admin))
+    r = client.patch(f"/appointments/{appt_id}/check-in", headers=auth_header(admin))
+    assert r.status_code == 400
