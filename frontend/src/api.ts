@@ -177,4 +177,14 @@ export const api = {
       method: 'PATCH',
     })
   },
+  async checkIn(id: number): Promise<Appointment> {
+    return request<Appointment>(`/appointments/${id}/check-in`, {
+      method: 'PATCH',
+    })
+  },
+  async undoCheckIn(id: number): Promise<Appointment> {
+    return request<Appointment>(`/appointments/${id}/undo-check-in`, {
+      method: 'PATCH',
+    })
+  },
 }

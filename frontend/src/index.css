@@ -250,3 +250,13 @@ td {
   background: #fef2f2;
   color: #dc2626;
 }
+
+.badge.no_show {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.badge.completed {
+  background: #ecfdf5;
+  color: #059669;
+}

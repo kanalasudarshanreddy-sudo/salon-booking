@@ -11,6 +11,13 @@ function fmt(iso: string): string {
   })
 }
 
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default function AdminPage() {
   const [services, setServices] = useState<Service[]>([])
   const [stylists, setStylists] = useState<Stylist[]>([])
@@ -90,6 +97,26 @@ export default function AdminPage() {
 
   function toggle<T>(arr: T[], v: T): T[] {
     return arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]
+  }
+
+  async function checkIn(id: number) {
+    setError(null)
+    try {
+      await api.checkIn(id)
+      await loadAll()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+
+  async function undoCheckIn(id: number) {
+    setError(null)
+    try {
+      await api.undoCheckIn(id)
+      await loadAll()
+    } catch (e) {
+      setError((e as Error).message)
+    }
   }
 
   return (
@@ -223,6 +250,7 @@ export default function AdminPage() {
                 <th>Service</th>
                 <th>Stylist</th>
                 <th>Status</th>
+                <th>Check-in</th>
               </tr>
             </thead>
             <tbody>
@@ -232,9 +260,26 @@ export default function AdminPage() {
                   <td>{a.service?.name ?? a.service_id}</td>
                   <td>{a.stylist?.name ?? a.stylist_id}</td>
                   <td>
-                    <span className={`badge ${a.status === 'cancelled' ? 'cancelled' : ''}`}>
-                      {a.status}
+                    <span className={`badge ${a.status}`}>
+                      {a.status === 'no_show' ? 'no show' : a.status}
                     </span>
+                  </td>
+                  <td>
+                    {a.checked_in_at ? (
+                      <span>
+                        ✓ {fmtTime(a.checked_in_at)}{' '}
+                        <button
+                          className="link-btn"
+                          onClick={() => undoCheckIn(a.id)}
+                        >
+                          undo
+                        </button>
+                      </span>
+                    ) : a.status === 'booked' ? (
+                      <button onClick={() => checkIn(a.id)}>Check in</button>
+                    ) : (
+                      <span className="muted">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

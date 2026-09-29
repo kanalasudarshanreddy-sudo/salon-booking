@@ -49,8 +49,8 @@ export default function HistoryPage() {
         <div className="card" key={a.id}>
           <div className="row">
             <strong>{a.service?.name ?? `Service #${a.service_id}`}</strong>
-            <span className={`badge ${a.status === 'cancelled' ? 'cancelled' : ''}`}>
-              {a.status}
+            <span className={`badge ${a.status}`}>
+              {a.status === 'no_show' ? 'no show' : a.status}
             </span>
           </div>
           <div className="muted">

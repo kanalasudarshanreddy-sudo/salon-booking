@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
@@ -21,6 +22,45 @@ from app.schemas import AppointmentCreate, AppointmentDetailOut, AppointmentOut
 
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 settings = get_settings()
+
+
+def _salon_now() -> datetime:
+    """Current wall-clock time in the salon's timezone, as naive datetime
+    (matching the naive storage convention used across the app)."""
+    try:
+        zone = ZoneInfo(settings.salon_tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = None
+    return datetime.now(zone).replace(tzinfo=None)
+
+
+def _sweep_elapsed(session: Session) -> None:
+    """Transition elapsed `booked` appointments to a terminal status.
+
+    A booking whose end time has passed is resolved based on check-in:
+    - checked in  -> completed (the customer attended)
+    - not checked in -> no_show
+
+    Runs lazily on list reads (the app has no background scheduler). Persists
+    the new status so admin views and reports reflect reality.
+    """
+    now = _salon_now()
+    elapsed = session.exec(
+        select(Appointment).where(
+            Appointment.status == AppointmentStatus.booked,
+            Appointment.end < now,
+        )
+    ).all()
+    if not elapsed:
+        return
+    for appt in elapsed:
+        appt.status = (
+            AppointmentStatus.completed
+            if appt.checked_in_at is not None
+            else AppointmentStatus.no_show
+        )
+        session.add(appt)
+    session.commit()
 
 
 def _within_working_hours(session: Session, stylist_id: int, start: datetime, end: datetime) -> bool:
@@ -102,6 +142,7 @@ def my_appointments(
     session: Session = Depends(get_session),
     user: Customer = Depends(get_current_user),
 ) -> list[Appointment]:
+    _sweep_elapsed(session)
     rows = session.exec(
         select(Appointment)
         .where(Appointment.customer_id == user.id)
@@ -115,6 +156,7 @@ def list_all_appointments(
     upcoming_only: bool = False,
     session: Session = Depends(get_session),
 ) -> list[Appointment]:
+    _sweep_elapsed(session)
     stmt = select(Appointment)
     if upcoming_only:
         stmt = stmt.where(Appointment.start >= datetime.utcnow())
@@ -140,4 +182,51 @@ def cancel_appointment(
     session.add(appt)
     session.commit()
     session.refresh(appt)
+    return appt
+
+
+@router.patch(
+    "/{appointment_id}/check-in",
+    response_model=AppointmentOut,
+    dependencies=[Depends(require_admin)],
+)
+def check_in_appointment(
+    appointment_id: int,
+    session: Session = Depends(get_session),
+) -> Appointment:
+    """Admin marks a customer as arrived. Records the salon-local arrival time."""
+    appt = session.get(Appointment, appointment_id)
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if appt.status != AppointmentStatus.booked:
+        raise HTTPException(
+            status_code=400,
+            detail="Only booked appointments can be checked in",
+        )
+    if appt.checked_in_at is None:
+        appt.checked_in_at = _salon_now()
+        session.add(appt)
+        session.commit()
+        session.refresh(appt)
+    return appt
+
+
+@router.patch(
+    "/{appointment_id}/undo-check-in",
+    response_model=AppointmentOut,
+    dependencies=[Depends(require_admin)],
+)
+def undo_check_in_appointment(
+    appointment_id: int,
+    session: Session = Depends(get_session),
+) -> Appointment:
+    """Admin clears a check-in (e.g. marked by mistake)."""
+    appt = session.get(Appointment, appointment_id)
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if appt.checked_in_at is not None:
+        appt.checked_in_at = None
+        session.add(appt)
+        session.commit()
+        session.refresh(appt)
     return appt

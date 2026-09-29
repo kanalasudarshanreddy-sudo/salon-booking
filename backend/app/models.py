@@ -21,6 +21,7 @@ class AppointmentStatus(str, Enum):
     booked = "booked"
     cancelled = "cancelled"
     completed = "completed"
+    no_show = "no_show"
 
 
 class StylistServiceLink(SQLModel, table=True):
@@ -107,6 +108,9 @@ class Appointment(SQLModel, table=True):
     start: datetime = Field(sa_column=Column(DateTime, index=True))
     end: datetime = Field(sa_column=Column(DateTime))
     status: AppointmentStatus = Field(default=AppointmentStatus.booked)
+    checked_in_at: Optional[datetime] = Field(
+        default=None, sa_column=Column(DateTime, nullable=True)
+    )
     created_at: datetime = Field(
         default_factory=datetime.utcnow, sa_column=Column(DateTime)
     )

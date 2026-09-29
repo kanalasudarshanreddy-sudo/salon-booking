@@ -132,6 +132,7 @@ class AppointmentOut(BaseModel):
     start: datetime
     end: datetime
     status: AppointmentStatus
+    checked_in_at: datetime | None = None
 
 
 class AppointmentDetailOut(AppointmentOut):

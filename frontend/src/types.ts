@@ -1,7 +1,7 @@
 // Shared types mirroring the backend API schemas.
 
 export type Role = 'customer' | 'admin'
-export type AppointmentStatus = 'booked' | 'cancelled' | 'completed'
+export type AppointmentStatus = 'booked' | 'cancelled' | 'completed' | 'no_show'
 
 export interface User {
   id: number
@@ -56,6 +56,7 @@ export interface Appointment {
   start: string
   end: string
   status: AppointmentStatus
+  checked_in_at?: string | null
   service?: Service | null
   stylist?: Stylist | null
 }

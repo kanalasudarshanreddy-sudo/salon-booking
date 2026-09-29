@@ -173,3 +173,146 @@ def test_cannot_cancel_others_appointment(client):
     other = register(client, email="other@test.com").json()["access_token"]
     r = client.patch(f"/appointments/{appt['id']}/cancel", headers=auth_header(other))
     assert r.status_code == 403
+
+
+def test_check_in_flow(client):
+    admin = make_admin_token(client)
+    svc = client.post(
+        "/services", json={"name": "Cut", "duration_min": 30, "price": 30},
+        headers=auth_header(admin),
+    ).json()
+    stylist = client.post(
+        "/stylists",
+        json={
+            "name": "Alex", "service_ids": [svc["id"]],
+            "working_hours": [{"weekday": 0, "start": "09:00:00", "end": "17:00:00"}],
+        },
+        headers=auth_header(admin),
+    ).json()
+    monday = _next_monday_9am()
+    slot = client.get(
+        "/availability",
+        params={"stylist_id": stylist["id"], "service_id": svc["id"], "date": monday.date().isoformat()},
+    ).json()["slots"][0]["start"]
+
+    cust = register(client, email="cust@test.com").json()["access_token"]
+    appt = client.post(
+        "/appointments",
+        json={"stylist_id": stylist["id"], "service_id": svc["id"], "start": slot},
+        headers=auth_header(cust),
+    ).json()
+    appt_id = appt["id"]
+    assert appt["checked_in_at"] is None
+
+    # Customer cannot check in (admin-only).
+    forbidden = client.patch(
+        f"/appointments/{appt_id}/check-in", headers=auth_header(cust)
+    )
+    assert forbidden.status_code == 403
+
+    # Admin checks in -> records timestamp.
+    ok = client.patch(f"/appointments/{appt_id}/check-in", headers=auth_header(admin))
+    assert ok.status_code == 200
+    assert ok.json()["checked_in_at"] is not None
+
+    # Idempotent: checking in again keeps the same (non-null) value.
+    again = client.patch(f"/appointments/{appt_id}/check-in", headers=auth_header(admin))
+    assert again.status_code == 200
+    assert again.json()["checked_in_at"] == ok.json()["checked_in_at"]
+
+    # Undo clears it.
+    undo = client.patch(
+        f"/appointments/{appt_id}/undo-check-in", headers=auth_header(admin)
+    )
+    assert undo.status_code == 200
+    assert undo.json()["checked_in_at"] is None
+
+
+def test_cannot_check_in_cancelled_appointment(client):
+    admin = make_admin_token(client)
+    svc = client.post(
+        "/services", json={"name": "Cut", "duration_min": 30, "price": 30},
+        headers=auth_header(admin),
+    ).json()
+    stylist = client.post(
+        "/stylists",
+        json={
+            "name": "Alex", "service_ids": [svc["id"]],
+            "working_hours": [{"weekday": 0, "start": "09:00:00", "end": "17:00:00"}],
+        },
+        headers=auth_header(admin),
+    ).json()
+    monday = _next_monday_9am()
+    slot = client.get(
+        "/availability",
+        params={"stylist_id": stylist["id"], "service_id": svc["id"], "date": monday.date().isoformat()},
+    ).json()["slots"][0]["start"]
+
+    cust = register(client, email="cust2@test.com").json()["access_token"]
+    appt = client.post(
+        "/appointments",
+        json={"stylist_id": stylist["id"], "service_id": svc["id"], "start": slot},
+        headers=auth_header(cust),
+    ).json()
+    client.patch(f"/appointments/{appt['id']}/cancel", headers=auth_header(cust))
+
+    # Cannot check in a cancelled appointment.
+    r = client.patch(f"/appointments/{appt['id']}/check-in", headers=auth_header(admin))
+    assert r.status_code == 400
+
+
+def _seed_customer_and_appt(client, *, end_offset_min, checked_in):
+    """Insert an appointment directly with a chosen end time relative to now.
+
+    Bypasses the booking endpoint (which enforces future/working-hours) so we
+    can create already-elapsed appointments for sweep tests.
+    """
+    from app import db as db_module
+    from app.models import Appointment, AppointmentStatus, Customer, Service, Stylist
+    from app.routers.appointments import _salon_now
+    from sqlmodel import Session
+
+    with Session(db_module.engine) as session:
+        cust = Customer(name="C", email=f"sweep{end_offset_min}_{checked_in}@test.com",
+                        password_hash="x")
+        svc = Service(name="S", duration_min=30, price=10)
+        sty = Stylist(name="St")
+        session.add_all([cust, svc, sty])
+        session.commit()
+        session.refresh(cust); session.refresh(svc); session.refresh(sty)
+        now = _salon_now()
+        end = now + timedelta(minutes=end_offset_min)
+        start = end - timedelta(minutes=30)
+        appt = Appointment(
+            customer_id=cust.id, stylist_id=sty.id, service_id=svc.id,
+            start=start, end=end, status=AppointmentStatus.booked,
+            checked_in_at=(now - timedelta(minutes=40)) if checked_in else None,
+        )
+        session.add(appt)
+        session.commit()
+        session.refresh(appt)
+        return appt.id
+
+
+def test_sweep_elapsed_checked_in_becomes_completed(client):
+    admin = make_admin_token(client)
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-10, checked_in=True)
+    appts = client.get("/appointments", headers=auth_header(admin)).json()
+    row = next(a for a in appts if a["id"] == appt_id)
+    assert row["status"] == "completed"
+
+
+def test_sweep_elapsed_not_checked_in_becomes_no_show(client):
+    admin = make_admin_token(client)
+    appt_id = _seed_customer_and_appt(client, end_offset_min=-10, checked_in=False)
+    appts = client.get("/appointments", headers=auth_header(admin)).json()
+    row = next(a for a in appts if a["id"] == appt_id)
+    assert row["status"] == "no_show"
+
+
+def test_sweep_future_stays_booked(client):
+    admin = make_admin_token(client)
+    appt_id = _seed_customer_and_appt(client, end_offset_min=120, checked_in=False)
+    appts = client.get("/appointments", headers=auth_header(admin)).json()
+    row = next(a for a in appts if a["id"] == appt_id)
+    assert row["status"] == "booked"
