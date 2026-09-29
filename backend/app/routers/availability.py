@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date as date_cls
 from datetime import datetime, time
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
@@ -59,6 +60,17 @@ def get_availability(
     ).all()
     existing = [Interval(start=a.start, end=a.end) for a in appts]
 
+    # Current time as the salon's local wall-clock time, stored naive to match
+    # the naive working-hours slots. This makes the "hide past slots" cutoff
+    # align with the salon's actual clock regardless of server/UTC timezone.
+    # For future dates every slot is after `now` (no effect); for past dates all
+    # slots are before `now` (correctly empty).
+    try:
+        salon_zone = ZoneInfo(settings.salon_tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        salon_zone = None
+    now = datetime.now(salon_zone).replace(tzinfo=None)
+
     slots = generate_slots(
         day=day_start,
         working_periods=working_periods,
@@ -66,6 +78,7 @@ def get_availability(
         duration_min=service.duration_min,
         slot_interval_min=settings.slot_interval_minutes,
         buffer_min=settings.booking_buffer_minutes,
+        now=now,
     )
 
     return AvailabilityOut(

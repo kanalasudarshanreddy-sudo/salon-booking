@@ -123,6 +123,7 @@ npm test
 | `CORS_ORIGINS`                | `http://localhost:5173,http://127.0.0.1:5173` | Allowed frontend origins.           |
 | `SLOT_INTERVAL_MINUTES`       | `15`                                    | Slot granularity.                         |
 | `BOOKING_BUFFER_MINUTES`      | `0`                                     | Buffer around each booking.               |
+| `SALON_TZ`                    | `Asia/Kolkata`                          | IANA timezone for working hours + past-slot cutoff. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | seed admin creds                     | Used by the seed script.                  |
 
 ### Frontend (`frontend/.env`)

@@ -112,10 +112,70 @@ button:disabled {
   gap: 0.5rem;
 }
 
+.slot-group {
+  margin-bottom: 1rem;
+}
+
+.slot-group-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--gray);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0.75rem 0 0.5rem;
+}
+
 .slot {
   padding: 0.5rem;
   text-align: center;
   background: #fff;
+  color: var(--purple-dark);
+  border: 1px solid var(--purple);
+}
+
+.slot:hover {
+  background: var(--purple);
+  color: #fff;
+}
+
+.slot.selected {
+  background: var(--purple);
+  color: #fff;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35);
+}
+
+.confirm-panel {
+  border-color: var(--purple);
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.15);
+}
+
+.confirm-panel h3 {
+  margin-top: 0;
+}
+
+.confirm-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.btn-secondary {
+  background: #fff;
+  color: var(--gray);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--bg);
+  color: #111827;
 }
 
 input,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import email_validator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,6 +12,13 @@ from app.db import init_db
 from app.routers import appointments, auth, availability, services, stylists
 
 settings = get_settings()
+
+# Permit the RFC 6761 reserved `.test` TLD in email addresses so the documented
+# seed/demo accounts (e.g. admin@salon.test) validate. Other special-use
+# domains (localhost, invalid, etc.) remain rejected.
+email_validator.SPECIAL_USE_DOMAIN_NAMES = [
+    d for d in email_validator.SPECIAL_USE_DOMAIN_NAMES if d != "test"
+]
 
 
 @asynccontextmanager

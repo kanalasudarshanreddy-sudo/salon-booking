@@ -32,6 +32,34 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * FastAPI returns `detail` as either a string (HTTPException) or an array of
+ * validation-error objects ({ loc, msg, type }) for 422s. Normalize both into a
+ * human-readable string so the UI never renders "[object Object]".
+ */
+function normalizeDetail(detail: unknown): string | null {
+  if (detail == null) return null
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d) =>
+        d && typeof d === 'object' && 'msg' in d
+          ? String((d as { msg: unknown }).msg)
+          : String(d),
+      )
+      .filter(Boolean)
+    return msgs.length ? msgs.join('; ') : null
+  }
+  if (typeof detail === 'object' && 'msg' in (detail as object)) {
+    return String((detail as { msg: unknown }).msg)
+  }
+  try {
+    return JSON.stringify(detail)
+  } catch {
+    return null
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -48,7 +76,7 @@ async function request<T>(
     let detail = res.statusText
     try {
       const data = await res.json()
-      detail = data.detail ?? detail
+      detail = normalizeDetail(data.detail) ?? detail
     } catch {
       /* ignore */
     }

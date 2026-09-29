@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     slot_interval_minutes: int = 15
     booking_buffer_minutes: int = 0
 
+    # Salon local timezone (IANA name, e.g. "Asia/Kolkata", "America/New_York").
+    # Working hours and the "hide past slots" cutoff are interpreted in this zone.
+    salon_tz: str = "Asia/Kolkata"
+
     # Seed admin
     admin_email: str = "admin@salon.test"
     admin_password: str = "admin12345"
