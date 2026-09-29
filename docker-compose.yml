@@ -1,0 +1,52 @@
+# Full production-like stack: Postgres + FastAPI backend + nginx-served PWA.
+# Usage:
+#   docker compose up --build
+#   # then seed the DB once:
+#   docker compose exec backend python -m app.seed
+#
+# Override secrets/URLs via a root .env file (see .env.docker.example).
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-salon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-salon}
+      POSTGRES_DB: ${POSTGRES_DB:-salon}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-salon}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-salon}:${POSTGRES_PASSWORD:-salon}@db:5432/${POSTGRES_DB:-salon}
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+      SALON_TZ: ${SALON_TZ:-Asia/Kolkata}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@salon.test}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin12345}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Frontend talks to the backend through the browser, so this must be a
+        # URL the browser can reach (the published backend port below).
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8000}
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
